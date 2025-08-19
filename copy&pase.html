@@ -1,0 +1,274 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Line Break Remover</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+
+        .container {
+            background: white;
+            border-radius: 8px;
+            padding: 24px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+
+        h1 {
+            color: #333;
+            margin-bottom: 16px;
+            font-size: 24px;
+        }
+
+        .description {
+            color: #666;
+            margin-bottom: 24px;
+            line-height: 1.5;
+        }
+
+        .input-section {
+            margin-bottom: 24px;
+        }
+
+        textarea {
+            width: 100%;
+            min-height: 120px;
+            padding: 12px;
+            border: 2px solid #e1e5e9;
+            border-radius: 6px;
+            font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+            font-size: 14px;
+            resize: vertical;
+            box-sizing: border-box;
+        }
+
+        textarea:focus {
+            outline: none;
+            border-color: #0066cc;
+        }
+
+        .button-row {
+            display: flex;
+            gap: 12px;
+            margin-top: 12px;
+            align-items: center;
+        }
+
+        button {
+            padding: 8px 16px;
+            border: none;
+            border-radius: 4px;
+            font-size: 14px;
+            cursor: pointer;
+            font-weight: 500;
+        }
+
+        .copy-btn {
+            background: #0066cc;
+            color: white;
+        }
+
+        .copy-btn:hover:not(:disabled) {
+            background: #0052a3;
+        }
+
+        .copy-btn:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+        }
+
+        .clear-btn {
+            background: #f1f3f4;
+            color: #5f6368;
+        }
+
+        .clear-btn:hover {
+            background: #e8eaed;
+        }
+
+        .status-message {
+            font-size: 14px;
+            margin-left: 8px;
+        }
+
+        .success {
+            color: #137333;
+        }
+
+        .error {
+            color: #d93025;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Line Break Remover</h1>
+        <p class="description">
+            Removes all line breaks from text and replaces them with spaces. Just type or paste your text below.
+        </p>
+
+        <div class="input-section">
+            <textarea 
+                id="textInput" 
+                placeholder="Type or paste text here..."
+            ></textarea>
+            <div class="button-row">
+                <button id="copyBtn" class="copy-btn">Copy Text</button>
+                <button id="clearBtn" class="clear-btn">Clear</button>
+                <span id="statusMessage" class="status-message"></span>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Replace any sequence of CR/LF line breaks with a single space, then trim ends
+        function inlineText(str) {
+            return (str ?? "").replace(/(?:\r\n|\r|\n)+/g, " ").trim();
+        }
+
+        // State variables
+        let input = "";
+        let copied = false;
+        let copyError = "";
+        let copyTimeout = null;
+
+        // DOM elements
+        const textInput = document.getElementById('textInput');
+        const copyBtn = document.getElementById('copyBtn');
+        const clearBtn = document.getElementById('clearBtn');
+        const statusMessage = document.getElementById('statusMessage');
+
+        // Platform detection
+        const isMac = (() => {
+            if (typeof navigator === "undefined") return false;
+            const p = navigator.platform || "";
+            const ua = navigator.userAgent || "";
+            return /Mac|iPhone|iPad|iPod/i.test(p) || /Mac OS X/i.test(ua);
+        })();
+
+        // Update status display
+        function updateStatus() {
+            if (copied) {
+                statusMessage.textContent = "✓ Copied!";
+                statusMessage.className = "status-message success";
+            } else if (copyError) {
+                statusMessage.textContent = copyError;
+                statusMessage.className = "status-message error";
+            } else {
+                statusMessage.textContent = "";
+                statusMessage.className = "status-message";
+            }
+        }
+
+        // Notify copied with timeout
+        function notifyCopied() {
+            copied = true;
+            copyError = "";
+            updateStatus();
+            
+            if (copyTimeout) clearTimeout(copyTimeout);
+            copyTimeout = setTimeout(() => {
+                copied = false;
+                updateStatus();
+            }, 1500);
+        }
+
+        // Copy text with multiple fallback strategies
+        async function copyText(text) {
+            // Try modern async clipboard in secure contexts first
+            try {
+                if (window.isSecureContext && navigator.clipboard?.writeText) {
+                    await navigator.clipboard.writeText(text);
+                    notifyCopied();
+                    return true;
+                }
+            } catch (_) {
+                // fall through to legacy strategies
+            }
+
+            // Fallback 1: execCommand on a temporary textarea
+            try {
+                const ta = document.createElement("textarea");
+                ta.value = text;
+                ta.setAttribute("readonly", "");
+                ta.style.position = "fixed"; // prevent scroll jump
+                ta.style.top = "-9999px";
+                document.body.appendChild(ta);
+                ta.select();
+                const ok = document.execCommand("copy");
+                document.body.removeChild(ta);
+                if (ok) {
+                    notifyCopied();
+                    return true;
+                }
+            } catch (_) {}
+
+            // Fallback 2: select the on-screen textarea and attempt copy
+            try {
+                textInput.focus();
+                textInput.select();
+                const ok = document.execCommand("copy");
+                if (ok) {
+                    notifyCopied();
+                    return true;
+                }
+            } catch (_) {}
+
+            // Last resort: instruct the user with a platform-appropriate hint
+            copyError = `Clipboard blocked — text selected, press ${isMac ? "⌘C" : "Ctrl+C"} to copy.`;
+            copied = false;
+            updateStatus();
+            return false;
+        }
+
+        // Handle input changes
+        function handleChange(e) {
+            const next = inlineText(e.target.value);
+            input = next;
+            textInput.value = next; // Update display
+            copyBtn.disabled = !next; // Enable/disable copy button
+        }
+
+        // Handle paste events
+        function handlePaste(e) {
+            e.preventDefault();
+            const raw = e.clipboardData?.getData("text") ?? "";
+            const cleaned = inlineText(raw);
+            input = cleaned;
+            textInput.value = cleaned;
+            copyBtn.disabled = !cleaned;
+            
+            // Some browsers dislike clipboard writes inside the paste handler; defer a tick
+            setTimeout(() => {
+                copyText(cleaned);
+            }, 0);
+        }
+
+        // Clear all content
+        function clearAll() {
+            input = "";
+            textInput.value = "";
+            copyError = "";
+            copied = false;
+            copyBtn.disabled = true;
+            updateStatus();
+        }
+
+        // Event listeners
+        textInput.addEventListener('input', handleChange);
+        textInput.addEventListener('paste', handlePaste);
+        copyBtn.addEventListener('click', () => copyText(input));
+        clearBtn.addEventListener('click', clearAll);
+
+        // Initialize
+        copyBtn.disabled = true;
+        updateStatus();
+    </script>
+</body>
+</html>
